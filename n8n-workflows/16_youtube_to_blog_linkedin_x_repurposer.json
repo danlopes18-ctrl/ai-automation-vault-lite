@@ -1,0 +1,190 @@
+{
+  "name": "[Vault] Transcript -> Blog Post + LinkedIn + X Thread Engine",
+  "nodes": [
+    {
+      "parameters": {
+        "content": "## 16 · Omnichannel Content Repurposer\n**Trigger:** POST `/webhook/vault-repurpose`\n**Payload:** `{ title, transcript, targetAudience, ctaUrl }`\nTransforms a single video/podcast transcript into an SEO blog article, a high-hook LinkedIn post, and a 6-tweet X thread in one run.",
+        "height": 220,
+        "width": 460,
+        "color": 4
+      },
+      "id": "7b0c0f15-7ae6-55bf-9894-24d33fd1c9b4",
+      "name": "Setup Guide",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        180,
+        40
+      ]
+    },
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "vault-repurpose",
+        "responseMode": "onReceived",
+        "options": {}
+      },
+      "id": "91360edb-f079-5deb-ab5e-f61be040f3ca",
+      "name": "Incoming Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        220,
+        320
+      ],
+      "webhookId": "e8c3d3ed-e9a5-51cf-83a6-c1e78036d738"
+    },
+    {
+      "parameters": {
+        "jsCode": "const b = $input.first().json.body || $input.first().json;\nreturn [{\n  json: {\n    title: String(b.title || \"Untitled Episode\"),\n    targetAudience: String(b.targetAudience || \"Founders & Engineers\"),\n    ctaUrl: String(b.ctaUrl || \"\"),\n    transcript: String(b.transcript || \"\").replace(/\\s+/g, \" \").trim().slice(0, 9000),\n  }\n}];"
+      },
+      "id": "7e0d3aa3-0b88-5ca8-8b19-81c3e3fbdf9a",
+      "name": "Sanitize Transcript",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        460,
+        320
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ ($env.OPENAI_BASE_URL || \"https://api.openai.com/v1\") + \"/chat/completions\" }}",
+        "options": {
+          "timeout": 20000
+        },
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "={{ \"Bearer \" + $env.OPENAI_API_KEY }}"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ model: $env.OPENAI_MODEL || \"gpt-4o-mini\", temperature: 0.2, response_format: { type: \"json_object\" }, messages: [ { role: \"system\", content: \"You are an editorial director. Turn this transcript into 3 assets without clich\\u00e9s. Return JSON: { seoBlogMarkdown: string, linkedinPost: string, xThread: string[] (6 tweets), metaDescription: string }.\" }, { role: \"user\", content: JSON.stringify($json) } ] }) }}"
+      },
+      "id": "f29de4a5-4c20-575b-be44-522b370b179f",
+      "name": "Generate Omnichannel Pack",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        700,
+        320
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const items = $input.all();\nreturn items.map((item) => {\n  const raw = item.json?.choices?.[0]?.message?.content || \"{}\";\n  let parsed = {};\n  try {\n    parsed = JSON.parse(raw);\n  } catch (err) {\n    parsed = { parseError: err.message, rawText: raw };\n  }\n  return {\n    json: {\n      ...parsed,\n      modelUsed: item.json?.model || \"unknown\",\n      processedAt: new Date().toISOString(),\n    },\n  };\n});"
+      },
+      "id": "7ff823a2-6fd9-5fff-94a9-51968eacc10b",
+      "name": "Parse Content Pack",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        940,
+        320
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $env.SLACK_WEBHOOK_URL }}",
+        "options": {
+          "timeout": 20000
+        },
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ text: `✍️ *Content Pack Ready:*\\n*LinkedIn Preview:*\\n${String($json.linkedinPost || \"\").slice(0, 500)}...` }) }}"
+      },
+      "id": "d5bd668b-be21-5eff-9def-b9516f983335",
+      "name": "Deliver Drafts to Slack",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1180,
+        320
+      ]
+    }
+  ],
+  "connections": {
+    "Incoming Webhook": {
+      "main": [
+        [
+          {
+            "node": "Sanitize Transcript",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Sanitize Transcript": {
+      "main": [
+        [
+          {
+            "node": "Generate Omnichannel Pack",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Generate Omnichannel Pack": {
+      "main": [
+        [
+          {
+            "node": "Parse Content Pack",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parse Content Pack": {
+      "main": [
+        [
+          {
+            "node": "Deliver Drafts to Slack",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "versionId": "ef58db0b-e2d2-50ce-8861-ca70ab7e45f8",
+  "meta": {
+    "templateCredsSetupCompleted": false,
+    "vaultCategory": "Content-SEO-Growth",
+    "vaultVersion": "1.0.0"
+  },
+  "tags": [
+    {
+      "name": "AI-Automation-Vault"
+    },
+    {
+      "name": "Content-SEO-Growth"
+    }
+  ]
+}

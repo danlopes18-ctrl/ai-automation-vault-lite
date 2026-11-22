@@ -1,0 +1,186 @@
+{
+  "name": "[Vault] Daily Stripe Revenue & Refund Executive Briefing",
+  "nodes": [
+    {
+      "parameters": {
+        "content": "## 21 · Daily Stripe Revenue Briefing\n**Trigger:** Daily at 08:30 UTC\n**Env Vars:** `STRIPE_SECRET_KEY`, `SLACK_WEBHOOK_URL`\nSummarizes last 24h gross revenue, net charges, failed payments, and refunds straight to your Slack.",
+        "height": 220,
+        "width": 460,
+        "color": 4
+      },
+      "id": "92e5a0b0-adb9-5900-9e15-cfa0938a3e55",
+      "name": "Setup Guide",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        180,
+        40
+      ]
+    },
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "cronExpression",
+              "expression": "30 8 * * *"
+            }
+          ]
+        }
+      },
+      "id": "f695dca3-0d8f-55ae-9f1f-50e709702948",
+      "name": "Schedule Trigger",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [
+        220,
+        320
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const since = Math.floor((Date.now() - 86400 * 1000) / 1000);\nreturn [{ json: { since } }];"
+      },
+      "id": "f88f151b-9938-574b-9738-7911b0062e35",
+      "name": "Compute 24h Window",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        460,
+        320
+      ]
+    },
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "={{ \"https://api.stripe.com/v1/charges?created[gte]=\" + $json.since + \"&limit=100\" }}",
+        "options": {
+          "timeout": 20000
+        },
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "={{ \"Bearer \" + $env.STRIPE_SECRET_KEY }}"
+            }
+          ]
+        }
+      },
+      "id": "2bc51492-eab0-5113-ad00-27db3c109907",
+      "name": "Fetch Stripe Charges (24h)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        700,
+        320
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const charges = $input.first().json.data || [];\nlet grossCents = 0, refundedCents = 0, succeeded = 0, failed = 0;\nfor (const c of charges) {\n  if (c.status === \"succeeded\") { succeeded++; grossCents += Number(c.amount || 0); refundedCents += Number(c.amount_refunded || 0); }\n  else if (c.status === \"failed\") { failed++; }\n}\nconst netUsd = ((grossCents - refundedCents) / 100).toFixed(2);\nreturn [{ json: { succeeded, failed, grossUsd: (grossCents / 100).toFixed(2), refundedUsd: (refundedCents / 100).toFixed(2), netUsd } }];"
+      },
+      "id": "cc4eea8e-40f3-5e58-93d1-fb1cc5d1687a",
+      "name": "Aggregate Revenue KPIs",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        940,
+        320
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $env.SLACK_WEBHOOK_URL }}",
+        "options": {
+          "timeout": 20000
+        },
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ text: `📈 *24h Stripe Executive Briefing*\\n• Net Revenue: *$${$json.netUsd} USD*\\n• Gross: $${$json.grossUsd} | Refunds: $${$json.refundedUsd}\\n• Succeeded: ${$json.succeeded} | Failed: ${$json.failed}` }) }}"
+      },
+      "id": "d2e0f801-8cfa-5afb-912a-aec2b3f1a0a7",
+      "name": "Send Executive Briefing",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1180,
+        320
+      ]
+    }
+  ],
+  "connections": {
+    "Schedule Trigger": {
+      "main": [
+        [
+          {
+            "node": "Compute 24h Window",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Compute 24h Window": {
+      "main": [
+        [
+          {
+            "node": "Fetch Stripe Charges (24h)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch Stripe Charges (24h)": {
+      "main": [
+        [
+          {
+            "node": "Aggregate Revenue KPIs",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Aggregate Revenue KPIs": {
+      "main": [
+        [
+          {
+            "node": "Send Executive Briefing",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "versionId": "ce6ee196-4d36-58ff-96c7-ee794ffb26e8",
+  "meta": {
+    "templateCredsSetupCompleted": false,
+    "vaultCategory": "Finance-Executive",
+    "vaultVersion": "1.0.0"
+  },
+  "tags": [
+    {
+      "name": "AI-Automation-Vault"
+    },
+    {
+      "name": "Finance-Executive"
+    }
+  ]
+}

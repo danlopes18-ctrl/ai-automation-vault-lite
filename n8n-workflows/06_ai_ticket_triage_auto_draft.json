@@ -1,0 +1,259 @@
+{
+  "name": "[Vault] AI Support Ticket Triage & Auto-Draft Reply",
+  "nodes": [
+    {
+      "parameters": {
+        "content": "## 06 · AI Support Ticket Triage\n**Trigger:** POST `/webhook/vault-support-ticket`\n**Payload:** `{ ticketId, customerEmail, subject, body }`\nClassifies urgency (1–5), tags category (billing/bug/how-to), drafts a ready-to-send reply, and escalates P1/P2 tickets to Slack.",
+        "height": 220,
+        "width": 460,
+        "color": 4
+      },
+      "id": "9c7cbf1f-4cef-5eec-81ff-f30abc494336",
+      "name": "Setup Guide",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        180,
+        40
+      ]
+    },
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "vault-support-ticket",
+        "responseMode": "onReceived",
+        "options": {}
+      },
+      "id": "d6bf6cfe-1515-526a-b9c6-3635400d0d91",
+      "name": "Incoming Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        220,
+        320
+      ],
+      "webhookId": "e0373e80-06b6-56fa-897b-795c827e19f2"
+    },
+    {
+      "parameters": {
+        "jsCode": "const b = $input.first().json.body || $input.first().json;\nreturn [{\n  json: {\n    ticketId: String(b.ticketId || `TKT-${Date.now()}`),\n    customerEmail: String(b.customerEmail || \"unknown@customer.com\"),\n    subject: String(b.subject || \"(No subject)\").slice(0, 200),\n    body: String(b.body || \"\").slice(0, 3000),\n  }\n}];"
+      },
+      "id": "48ca7d15-94b3-593b-a183-65405218d651",
+      "name": "Normalize Ticket",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        460,
+        320
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ ($env.OPENAI_BASE_URL || \"https://api.openai.com/v1\") + \"/chat/completions\" }}",
+        "options": {
+          "timeout": 20000
+        },
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "={{ \"Bearer \" + $env.OPENAI_API_KEY }}"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ model: $env.OPENAI_MODEL || \"gpt-4o-mini\", temperature: 0.2, response_format: { type: \"json_object\" }, messages: [ { role: \"system\", content: \"You are a senior support engineer. Return JSON: { priority: 1|2|3|4|5, category: 'billing'|'bug'|'feature'|'access'|'other', sentiment: 'angry'|'neutral'|'positive', draftReply: string, internalNote: string }.\" }, { role: \"user\", content: JSON.stringify($json) } ] }) }}"
+      },
+      "id": "1c17aed7-296e-55e6-93ea-ba1e254ab9b8",
+      "name": "Classify & Draft Reply",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        700,
+        320
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const t = $('Normalize Ticket').first().json;\nconst raw = $input.first().json?.choices?.[0]?.message?.content || '{}';\nlet ai = { priority: 3, category: 'other', sentiment: 'neutral', draftReply: '', internalNote: '' };\ntry { ai = { ...ai, ...JSON.parse(raw) }; } catch {}\nreturn [{ json: { ...t, ...ai, priority: Number(ai.priority) || 3 } }];"
+      },
+      "id": "df94b908-43b3-5dde-8ab6-e5f4d04ebd97",
+      "name": "Merge Triage Data",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        940,
+        320
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": false,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "id": "421772df-c424-5369-9cf4-8d80b23dd354",
+              "leftValue": "={{ $json.priority }}",
+              "rightValue": 2,
+              "operator": {
+                "type": "number",
+                "operation": "lte"
+              }
+            }
+          ],
+          "combinator": "and"
+        }
+      },
+      "id": "a5723e23-d54e-520a-a42b-81877a30da6d",
+      "name": "Is High Priority (<=2)?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        1180,
+        320
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $env.SLACK_WEBHOOK_URL }}",
+        "options": {
+          "timeout": 20000
+        },
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ text: `🚨 *P${$json.priority} Support Ticket* [${$json.category}] #${$json.ticketId} from ${$json.customerEmail}\\n*Subject:* ${$json.subject}\\n*Draft:* ${$json.draftReply}` }) }}"
+      },
+      "id": "fa2e90e5-a164-57a8-9a95-776a83d5ef8c",
+      "name": "Escalate Urgent Ticket to Slack",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1440,
+        220
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $env.HELPDESK_DRAFT_WEBHOOK || \"https://httpbin.org/post\" }}",
+        "options": {
+          "timeout": 20000
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify($json) }}"
+      },
+      "id": "631a8381-c70d-533c-ab24-c715b3798a82",
+      "name": "Save Draft to Helpdesk",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1440,
+        420
+      ]
+    }
+  ],
+  "connections": {
+    "Incoming Webhook": {
+      "main": [
+        [
+          {
+            "node": "Normalize Ticket",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Normalize Ticket": {
+      "main": [
+        [
+          {
+            "node": "Classify & Draft Reply",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Classify & Draft Reply": {
+      "main": [
+        [
+          {
+            "node": "Merge Triage Data",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Merge Triage Data": {
+      "main": [
+        [
+          {
+            "node": "Is High Priority (<=2)?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Is High Priority (<=2)?": {
+      "main": [
+        [
+          {
+            "node": "Escalate Urgent Ticket to Slack",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Save Draft to Helpdesk",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "versionId": "c9be191d-73ab-5bc4-a1a9-78c9dbf05e21",
+  "meta": {
+    "templateCredsSetupCompleted": false,
+    "vaultCategory": "Customer-Support-Ops",
+    "vaultVersion": "1.0.0"
+  },
+  "tags": [
+    {
+      "name": "AI-Automation-Vault"
+    },
+    {
+      "name": "Customer-Support-Ops"
+    }
+  ]
+}

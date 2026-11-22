@@ -1,0 +1,12 @@
+{
+  "name": "mcp-webhook-runner",
+  "version": "1.0.0",
+  "type": "module",
+  "private": true,
+  "bin": {
+    "mcp-webhook-runner": "./index.mjs"
+  },
+  "engines": {
+    "node": ">=22.0.0"
+  }
+}
