@@ -44,3 +44,11 @@ Upgrade to the **Full PRO Vault (v1.0 — $29 one-time, commercial agency licens
 
 ## License
 MIT License (Lite Edition). Built by [Daniel Lopes](https://github.com/danlopes18-ctrl).
+---
+
+### 🎁 Save $38 — Complete AI Engineering Stack Bundle ($79 vs $117)
+
+Want all 3 zero-dependency developer suites together? Grab the **[Complete AI Engineering Stack Bundle ($79 · Commercial License)](https://danlopes3.gumroad.com/l/complete-ai-engineering-stack)**:
+- **AI Agency & DevOps Automation Vault ($29)** — 25 standard-node n8n workflows + 3 MCP servers
+- **Production MCP Server Suite ($39)** — 12 hardened zero-dependency Node.js MCP servers + Universal Inspector CLI
+- **AI Coding Guardrails & Engineering OS ($49)** — 10 executable PreToolUse/PostToolUse hooks & OWASP CLIs + 8 rulebooks + 12 slash skills
